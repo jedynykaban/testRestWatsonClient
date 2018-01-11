@@ -1,32 +1,23 @@
 package main
 
 import (
-	//"context"
 	"fmt"
-	"sync"
-	//"time"
-	//"encoding/json"
 	"io"
 	"strings"
 
-	"cloud.google.com/go/datastore"
+	"github.com/jedynykaban/testRestWatsonClient/services/categories/watson"
+	"github.com/jedynykaban/testRestWatsonClient/utils"
+
 	log "github.com/Sirupsen/logrus"
-
-	"github.com/hashicorp/go-multierror"
-	//"github.com/jinzhu/now"
+	//"github.com/hashicorp/go-multierror"
 )
-
-type x struct {
-	ID    string
-	Name  string
-	Value int
-}
 
 var config Config
 
 func init() {
 	config = getConfig()
 	setupLogging(config.Service.LogOutput, config.Service.LogLevel, config.Service.LogFormat)
+	config.Log()
 }
 
 func setupLogging(output io.Writer, level log.Level, format string) {
@@ -37,93 +28,44 @@ func setupLogging(output io.Writer, level log.Level, format string) {
 	}
 }
 
-func mainC() {
-	log.Info("application started")
-
-	err := updateConncurencyTest()
-	if err != nil {
-		log.Error(err)
-	}
-
-	log.Info("application completed")
-}
-
-func mainX() {
-	log.Info("application started")
-
-	set1 := []string{"Ala", "ma", "kota"}
-	set1Flatten := strings.Join(set1, ",")
-	log.Info("Set 1: ", set1Flatten)
-	log.Info("Set 1 len: ", len(strings.Split(set1Flatten, ",")))
-
-	set2 := []string{}
-	set2Flatten := strings.Join(set2, ",")
-	log.Info("Set 2: ", set2Flatten)
-	log.Info("Set 2 len: ", len(strings.Split(set2Flatten, ",")))
-	log.Info("Set 2 value: ", strings.Split(set2Flatten, ",")[0])
-
-	log.Info("application completed")
-}
-
 func main() {
 	log.Info("application started")
 
-	//ctx := context.Background()
-	//client, _ := datastore.NewClient(ctx, "mosaiqio-dev")
+	fmt.Println("Hello world")
 
-	// for idx := range pubs {
-	// 	log.Infof("Publisher: %v (key: %v, decoded: %v)\n", pubs[idx], keys[idx], keys[idx].Encode())
-	// }
-
-	// Dagens PS Rss Source: Key(RssSource, 5630999308271616)
-	// Dagens PS production Publication Id: Key(Publication, 5705562083819520): EhYKC1B1YmxpY2F0aW9uEICAgIrbpZEK
-
-	eKey := "EhAKBU1pdGVtEICAgO6yqsEK"
-	dKey := datastore.Key{
-		Kind: "Publication",
-		ID:   5705562083819520,
-	}
-
-	if len(eKey) > 0 {
-		key, _ := datastore.DecodeKey(eKey)
-		log.Infof("Encoded key: %v;  Decoded key: %v)\n", eKey, key)
-	} else {
-		log.Infof("Decoded key: %v;  Encoded key: %v)\n", dKey, dKey.Encode())
-	}
+	httpOptions := utils.DefaultHttpProxyOptions()
+	httpOptions.MaxRetries = config.Watson.RetrieveRetries
+	watsonClient := createWatsonClient(config.Watson, httpOptions)
+	testWatsonClient(watsonClient)
 
 	log.Info("application completed")
 }
 
-func updateConncurencyTest() error {
-	// fist need to find all playlists that particular mitem belongs to (in this partcular case, regardless of serviced one)
-	numbers := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+// createWatsonClient creates and initializes IBM Watson client pkg
+func createWatsonClient(cfg WatsonConfig, httpOptions utils.HttpProxyOptions) watson.Client {
+	watsonHTTPProxy := utils.NewHTTPProxy(cfg.RetrieveTimeout)
+	watsonClient := watson.NewClient(cfg.NaturalLangAPIEndpoint, watsonHTTPProxy, httpOptions)
 
-	// for each run update
-	var wg sync.WaitGroup
-	errorChan := make(chan error, len(numbers))
-	for _, n := range numbers {
-		wg.Add(1)
-		go func(number int, wg *sync.WaitGroup, errorChan chan error) {
-			defer wg.Done()
-			errorChan <- checkIfEven(number)
-			return
-		}(n, &wg, errorChan)
-	}
-	wg.Wait()
-	close(errorChan)
-
-	var ret error
-	for err := range errorChan {
-		if err != nil {
-			ret = multierror.Append(ret, err)
-		}
-	}
-	return ret
+	return watsonClient
 }
 
-func checkIfEven(number int) error {
-	if number%2 != 0 {
-		return fmt.Errorf("number: %v is not even number", number)
+func testWatsonClient(client watson.Client) {
+	log.Infoln("starging Watson tests")
+
+	testText := "I%20still%20have%20a%20dream%2C%20a%20dream%20deeply%20rooted%20in%20the%20American%20dream%20–%20one%20day%20this%20nation%20will%20rise%20up%20and%20live%20up%20to%20its%20creed%2C%20We%20hold%20these%20truths%20to%20be%20self%20evident%3A%20that%20all%20men%20are%20created%20equal"
+	//testURL := "https://newatlas.com/stem-cell-muscle-growth/52894/"
+
+	categories, err := client.GetFeatures("2017-02-27", map[string]string{"text": testText}, []string{"categories"})
+	if err != nil {
+		log.Errorf("Categories error: %v", err)
+		return
 	}
-	return nil
+
+	idx := 0
+	for _, cat := range categories {
+		idx++
+		log.Infoln("Category %d: %v", idx, cat)
+	}
+
+	log.Infoln("completed Watson tests")
 }
